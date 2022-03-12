@@ -1,4 +1,4 @@
-from sub_routines import QMatrix,test_A
+from ..subroutines.matrices import QMatrix
 from qiskit.circuit import QuantumCircuit, QuantumRegister
 from qiskit.algorithms import AmplitudeEstimation, EstimationProblem 
 from math import ceil, log2

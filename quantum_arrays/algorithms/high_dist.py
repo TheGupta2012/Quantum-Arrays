@@ -1,12 +1,18 @@
 # type specs
 from ctypes import Union
-from typing import List, Optional, Set, Tuple
+from typing import List, Optional, Set
 from builtins import int
 
-from qiskit import QuantumCircuit
+# subroutines
+from ..subroutines.cmaj import CondMAJ
+from ..subroutines.cmp import CMP 
+from ..subroutines.hdq import HDq
+from ..subroutines.matrices import AMatrix 
 
-from sub_routines import HDq, CMP, CondMAJ, AMatrix
-from qae import QAE
+# get the qae algorithm
+from .qae import QAE
+
+from qiskit import QuantumCircuit
 from qiskit.circuit import QuantumRegister
 
 # helpers 
@@ -182,7 +188,9 @@ class HighDist:
         circuit = QuantumCircuit(
             name = 'hdist_circuit'
         )
-        
+         # add the qram and ancilla regs
+        circuit.add_register(self._R1)
+        circuit.add_register(self._R2)
         
         # add precision registers
         for reg_pair in self._Prec_Regs.values():
@@ -191,9 +199,6 @@ class HighDist:
             circuit.add_register(flip)
             
         # cached registers 
-        # add the qram and ancilla regs
-        circuit.add_register(self._R1)
-        circuit.add_register(self._R2)
         circuit.add_register(self._Rthres)
         circuit.add_register(self._Ancilla)
             
@@ -238,27 +243,28 @@ class HighDist:
             
             # add qae 
             qae_bits = prec_reg[:] + qae_range
-
+            hdq_bits = prec_reg[:] + self._Ancilla[:self.precision + 1]
             self._circuit.compose(self._QAE, qubits = qae_bits, inplace = True)
-            self._circuit.compose(self._HDq, qubits = prec_reg[:] + self._Ancilla[:self.precision + 1], inplace = True)
+            
+            self._circuit.compose(self._HDq, qubits = hdq_bits , inplace = True)
             
             # add cmp
             cmp_bits = prec_reg[:] + self._Rthres[:] + self._Ancilla[:self.precision] + flip_reg[:]
             self._circuit.compose(self._CMP, qubits = cmp_bits, inplace = True )
             
             # invert HDq
-            self._circuit.compose(self._HDq, qubits = prec_reg[:] + self._Ancilla[:self.precision + 1], inplace = True)
-
+            self._circuit.compose(self._HDq, qubits = hdq_bits, inplace = True)
+            
         # add the conditional MAJ 
-        # get the precision register s 
-        precision_bits = [reg[1][:] for reg in self._Prec_Regs.values()]
+        # get the flip precision register 
+        precision_bits = [reg[1][0] for reg in self._Prec_Regs.values()]
         
         # get the total bits in the cond maj operation 
         value_size = ceil(log2(self._M))
         index_size = ceil(log2(self._N))
         
         # note : cmaj is not applied on whole register but just on the value half 
-        c_maj_bits = self._R1[index_size: index_size+value_size ] + precision_bits + self._Rt1[:] + self._RK_half[:] + self._Ancilla[:len(self._Rt1)] + self._Rout[:]
+        c_maj_bits = precision_bits + self._R1[index_size: index_size+value_size] + self._Rt1[:] + self._RK_half[:] + self._Ancilla[:len(self._Rt1)] + self._Rout[:]
         self._circuit.compose(self._Cond_MAJ, qubits = c_maj_bits, inplace =True)
         
     # made circuit but bug in drawing ? 
@@ -268,7 +274,8 @@ class HighDist:
     
 # Uncomment to test
 
-# h = HighDist(0.7, 0.4, 4)
-# h.encode([1,2,3,4], 7)
-# h._construct_circuit()
-# print(h.get_circuit().draw()) # correct definition
+h = HighDist(0.7, 0.4, 4)
+h.encode([1,2,3,4], 7)
+# print(h._QAE.decompose().draw())
+h._construct_circuit()
+h.get_circuit().draw('mpl', scale = 0.5, filename = '../../Circuits/imgs/high-dist.png') # correct definition
