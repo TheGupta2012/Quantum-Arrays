@@ -1,6 +1,5 @@
 # type specs
-from ctypes import Union
-from typing import List, Optional, Set
+from typing import List, Optional
 from builtins import int
 
 # subroutines
@@ -12,11 +11,14 @@ from ..subroutines.matrices import AMatrix
 # get the qae algorithm
 from .qae import QAE
 
-from qiskit import QuantumCircuit
+# get imports from qiskit
+from qiskit import QuantumCircuit, assemble, execute, transpile 
+from qiskit.tools.monitor import job_monitor 
 from qiskit.circuit import QuantumRegister
 
+
 # helpers 
-from math import ceil, pi, log, log2
+import math 
 
 class HighDist:
     
@@ -62,6 +64,7 @@ class HighDist:
             raise ValueError("Precision must be atleast 1")
         self._precision = val
     
+    
     def _check_param(self,param, value):
 
         if not isinstance(value, float):
@@ -69,6 +72,7 @@ class HighDist:
         
         if value <= 0 or value >= 1:
             raise ValueError(f"{param} must lie between (0,1)")
+            
             
             
     # main methods
@@ -86,19 +90,17 @@ class HighDist:
         if N is None:
             N = len(arr)
             
-        if int(log2(N)) != log2(N):
+        if int(math.log2(N)) != math.log2(N):
             raise ValueError("N must be a power of 2 for the correct functioning of algorithm")
         
         self._N = N 
         self._M = M 
         self._array = arr 
-        
-        self._has_encoding = True
-        
+                
         #handle ancilla, as N is now available
-        size_anc = max([ceil(log2(self._N)) + ceil(log2(self._M))+ 1, 
+        size_anc = max([math.ceil(math.log2(self._N)) + math.ceil(math.log2(self._M))+ 1, 
                        self.precision + 1,
-                       ceil(log2(self._K)) + 1])
+                       math.ceil(math.log2(self._K)) + 1])
         
         self._Ancilla = QuantumRegister(size = size_anc, name = 'ancilla')
         
@@ -117,24 +119,101 @@ class HighDist:
         # make circuit skeleton
         self._define_circuit()
         
+        self._has_encoding = True
+        
+        
     def get_circuit(self):
         if self._circuit is None:
             raise Exception("Algorithm needs at least one array encoding for the generation of the circuit")
         
         return self._circuit
         
-    def run(self):
-        pass 
+    def run(self, backend, shots = 1024, optimization_level = 1):
+        """Run the HighDist circuit for the given array encoding and params for the algo 
+
+        Args:
+            backend : backend to execute the circuit on 
+            shots (int, optional): Shots required for the measurement. 
+                                   Defaults to 1024.
+            optimization_level (int, optional): Transpiler optimization level. 
+                                                Defaults to 1.
+        """
+        
+        if not self._has_encoding:
+            raise Exception("The circuit should have an encoding for it to be executed on a backend")
+        
+        # 1. Clear out the circuit for a run 
+        self._define_circuit()
+        
+        # 2. Transpile the routines individually and then just 
+        #    construct the circuit with them 
+        components = [
+            "HDq", "CMP", "oracle", "QAE",
+            "Cond_MAJ"
+        ]
+        
+        for component in components:
+            transpiled = transpile(self.__getattribute__(component), backend = backend, optimization_level = optimization_level)
+            self.__setattr__(component, transpiled) 
+            
+        # 3. Construct the circuit now and execute
+        self._construct_circuit()
+        
+        assembled_circ = assemble(self._circuit, backend = backend, shots = shots)
+        job = execute(assembled_circ, backend = backend, shots = shots)
+        
+        job_monitor(job)
+
+        # 4. Save the result of the executed circuit 
+        print("\n***HIGH DIST EXECUTED SUCCESFULLY!***\n")
+        self._result = {
+            "job_result" : job.result(),
+            "counts" : job.result().get_counts(),
+            "algorithm_result" : False
+        }
+        counts = job.result().get_counts()
+        
+        
+        if counts['1'] > counts['0']:
+            self._result["algorithm_result"] = True 
+            
+            
     
-    
+    def get_results(self, verbose = False):
+        """Get the results of the execution of HighDist algorithm
+
+        Args:
+            verbose (bool, optional): Verbosity of the result dictionary. Defaults to False.
+
+        Returns:
+            Dict: a dictionary containing the result of the execution
+        """
+        if not hasattr(self, "result"):
+            raise AttributeError("Result attribute not found. Please execute the circuit atleast once")
+        
+        if verbose:
+            result = self._result
+        else:
+            result = {
+                "counts": self._result["counts"],
+                "algorithm_result": self._result["algorithm_result"]
+            }
+            
+        return result 
+        
+        
     # helper methods
     def _setup_registers(self):
         
         # get the num of copies to use
-        const = ((8 / pi**2) - 0.5)**(-2)
-        self._K = ceil(const * log(1/(self.threshold * self.error)))
-        logk = ceil(log2(self._K))
-        print(f"K is {self._K}")
+        const = 0.5*(((8 / math.pi**2) - 0.5)**(-2))
+        
+        # Constant may be updated now 
+        """NOTE : """
+        """Try to bound by using the MAX value of K which you can have  """
+        self._K = math.ceil(const * math.log(1/(self.threshold * self.error)))
+        logk = math.ceil(math.log2(self._K))
+
         # setup k precision and flip resgiters 
         prec_regs = {}
         
@@ -150,7 +229,7 @@ class HighDist:
         self._Rthres = QuantumRegister(size = self.precision, name = 'thres_encoded')
         
         # registers for encoding the number of flip registers 
-        # in the k copies
+        # in the k copies 
         self._Rt1 = QuantumRegister(size = logk, name = 'encoding')
         self._Rt2 = None # only for the Rfi encoding
         
@@ -162,12 +241,14 @@ class HighDist:
     def _setup_routines(self):
         # setup the CMP and HDq routines 
         self._HDq = HDq(self.precision)
+        self._HDq.name = 'HDq'
         self._CMP = CMP(self.precision)
+        self._CMP.name = 'CMP'
     
     
     def _setup_array_registers(self):
-        size_n = ceil(log2(self._N))
-        size_m = ceil(log2(self._M))
+        size_n = math.ceil(math.log2(self._N))
+        size_m = math.ceil(math.log2(self._M))
         
         self._R1 = QuantumRegister(size = size_n + size_m, name = "r1")
         self._R2 = QuantumRegister(size = size_n + size_m, name = "r2")
@@ -178,6 +259,10 @@ class HighDist:
     def _make_QAE_operator(self):
         self._QAE = QAE(self._N, self._M, self._oracle, self.precision)
     
+    def _make_QAA_operator(self):
+        """TO DO"""
+        self.QAA = None 
+    
     def _make_cond_MAJ(self):
         self._Cond_MAJ = CondMAJ(self._N, self._M, self._K, self._array)
     
@@ -185,12 +270,10 @@ class HighDist:
         """Create the empty circuit skeleton for the 
            algorithm
         """
+        
         circuit = QuantumCircuit(
             name = 'hdist_circuit'
         )
-         # add the qram and ancilla regs
-        circuit.add_register(self._R1)
-        circuit.add_register(self._R2)
         
         # add precision registers
         for reg_pair in self._Prec_Regs.values():
@@ -198,26 +281,35 @@ class HighDist:
             circuit.add_register(prec)
             circuit.add_register(flip)
             
+         # add the qram and ancilla regs
+        circuit.add_register(self._R1)
+        circuit.add_register(self._R2)
+            
         # cached registers 
         circuit.add_register(self._Rthres)
         circuit.add_register(self._Ancilla)
             
         # add the Rt1 register and k/2 encoding register
         circuit.add_register(self._Rt1)
-        
-        if self._Rt2:
-            circuit.add_register(self._Rt2)
-        
         circuit.add_register(self._RK_half)
-        circuit.add_register(self._Rout)
         
+        
+        circuit.add_register(self._Rout)
         
         self._circuit = circuit
         
+  
+    def _encode_threshold(self):
+        """Re - confirm once"""
+        sin_inv = math.asin(math.sqrt(self.threshold - 2**(-self.precision - 3))) 
+        constant = math.floor(sin_inv * (2**(self.precision) / math.pi))
+
+        bin_rep = bin(constant)[2:].zfill(self.precision)
         
-    def _update_params(self):
-        pass 
-    
+        for i,bit in enumerate(bin_rep[::-1]):
+            if(bit == '1'):
+                self._circuit.x(self._Rthres[i])
+                
     def _construct_circuit(self):
         """Construct the High Dist circuit with 
            the components. 
@@ -227,15 +319,13 @@ class HighDist:
         
         # add the QRAM
         self._circuit.compose(self._oracle, self._R1[:], inplace = True)
+        self._circuit.barrier()
         
-        # add the encoding for threshold in self._Rthres
-        def encode():
-            pass 
-        
-        # add HDq on Rthres 
-        self._circuit.compose(self._HDq, self._Rthres[:] + self._Ancilla[:self.precision + 1], inplace = True)
-        
+        # add the encoding for threshold in self._Rthres     
+        self._encode_threshold()
+            
         qae_range = self._R1[:] + self._R2[:] + self._Ancilla[:self._R1.size+1]
+        hdq_thres_bits = self._Rthres[:] + self._Ancilla[:self.precision + 1]
         
         # start the qae operations 
         for i in range(self._K):
@@ -243,39 +333,86 @@ class HighDist:
             
             # add qae 
             qae_bits = prec_reg[:] + qae_range
-            hdq_bits = prec_reg[:] + self._Ancilla[:self.precision + 1]
+            hdq_prec_bits = prec_reg[:] + self._Ancilla[:self.precision + 1]
             self._circuit.compose(self._QAE, qubits = qae_bits, inplace = True)
+            self._circuit.barrier()
             
-            self._circuit.compose(self._HDq, qubits = hdq_bits , inplace = True)
+            # add the HDq circuit
+            self._circuit.compose(self._HDq, qubits = hdq_thres_bits, inplace = True)
+            self._circuit.compose(self._HDq, qubits = hdq_prec_bits , inplace = True)
             
             # add cmp
             cmp_bits = prec_reg[:] + self._Rthres[:] + self._Ancilla[:self.precision] + flip_reg[:]
             self._circuit.compose(self._CMP, qubits = cmp_bits, inplace = True )
             
-            # invert HDq
-            self._circuit.compose(self._HDq, qubits = hdq_bits, inplace = True)
+            # invert HDq circuit 
+            self._circuit.compose(self._HDq, qubits = hdq_thres_bits, inplace = True)
+            self._circuit.compose(self._HDq, qubits = hdq_prec_bits , inplace = True)
+            
+            self._circuit.barrier()
             
         # add the conditional MAJ 
         # get the flip precision register 
         precision_bits = [reg[1][0] for reg in self._Prec_Regs.values()]
         
         # get the total bits in the cond maj operation 
-        value_size = ceil(log2(self._M))
-        index_size = ceil(log2(self._N))
+        value_size = math.ceil(math.log2(self._M))
+        index_size = math.ceil(math.log2(self._N))
+        
+        # NOTE : condition on the R1 register's values not R2
         
         # note : cmaj is not applied on whole register but just on the value half 
-        c_maj_bits = precision_bits + self._R1[index_size: index_size+value_size] + self._Rt1[:] + self._RK_half[:] + self._Ancilla[:len(self._Rt1)] + self._Rout[:]
+        c_maj_bits = precision_bits + self._R1[index_size : index_size+value_size] + self._Rt1[:] + self._RK_half[:] + self._Ancilla[:len(self._Rt1)] + self._Rout[:]
+        
+        self._circuit.barrier()
         self._circuit.compose(self._Cond_MAJ, qubits = c_maj_bits, inplace =True)
         
+    # qaa left 
     # made circuit but bug in drawing ? 
     
     # qaa is left 
+          
+    def _update_params(self, threshold):
+        """Update the params of the HighDist 
+           algorithm to correctly run the Pmax 
+           circuit. Only the threshold of the 
+           algorithm changes which updates the 
+           k value
+           
+           Args:
+                threshold : the new threshold of the algorithm
+        """
+        
+        self.threshold = threshold 
+        
+        # now only the registers dependent on the 
+        # threshold will be change 
+        self._setup_registers()
+        
+        # array is same, no encoding required 
+        
+        # define skeleton again 
+        self._define_circuit()
+        
+        # okay, if I even Do setup these registers, are they gonna be empty?
+        # yes, they are gonna be because the operations happen on the circuit 
+        # and not a register 
+        
     
     
-# Uncomment to test
+# # Uncomment to test
+# h = HighDist(0.8, 0.4, 4)
+# h.encode([1,2,3,4,5,2,2,2], 7)
+# # print(h._QAE.decompose().draw())
+# h._construct_circuit()
 
-h = HighDist(0.7, 0.4, 4)
-h.encode([1,2,3,4], 7)
-# print(h._QAE.decompose().draw())
-h._construct_circuit()
-h.get_circuit().draw('mpl', scale = 0.5, filename = '../../Circuits/imgs/high-dist.png') # correct definition
+# circ = h.get_circuit()
+# circ.draw('text', filename = 'hdist.txt', scale = 0.7)# correct definition
+# # circ.draw('latex', filename = 'hdist.tex', scale = 0.7) 
+# manhattan = FakeManhattan()
+
+# from qiskit import transpile 
+# circ_decomp = circ.decompose()
+# print("Depth is :",circ_decomp.depth())
+
+# circ_decomp.draw('text', filename = 'hdist_decompose.txt', scale = 0.7)

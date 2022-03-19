@@ -57,5 +57,7 @@ def CMP(N, as_circ = False):
     circ.x(R3[0])
     
     if not as_circ:
-        circ.to_gate()
+        circ = circ.to_gate()
+        circ.name = 'CMP'
+        
     return circ 

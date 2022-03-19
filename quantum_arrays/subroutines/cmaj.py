@@ -6,8 +6,8 @@ from .cmp import CMP
 X = XGate()
 Z = ZGate()
 
-
-def CondMAJ(N , M,  k, type = None, array = None):
+# type is removed as no Rfi needed now 
+def CondMAJ(N , M,  k, array = None, as_circ = False):
     """Implements the conditional majority operation
        for a distribution of size M or a given array 
     Args : N - the size of the array 
@@ -63,8 +63,9 @@ def CondMAJ(N , M,  k, type = None, array = None):
     for i,bit in enumerate(bin_rep):
         if bit == '1':
             circ.x(k_register[i])
-            
-    circ.barrier()
+    
+    if as_circ:
+        circ.barrier()
     
     
     def get_bin_encoder(value):
@@ -120,6 +121,11 @@ def CondMAJ(N , M,  k, type = None, array = None):
         # add the inverse of the encoding you added
         circ.compose(inv_circ, qubits = qubits_cmaj, inplace = True)
         
-        circ.barrier()
+        if as_circ:
+            circ.barrier()
+            
+    if not as_circ:
+        circ = circ.to_gate()
+        circ.name = 'CMAJ'
     
     return circ 

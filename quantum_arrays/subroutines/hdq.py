@@ -20,7 +20,7 @@ def HDq(N, as_circ = False):
     R2 = QuantumRegister(size = 1, name = 'out')
     
     # HDq circuit 
-    circ = QuantumCircuit(R1, Ancilla, R2)
+    circ = QuantumCircuit(R1, Ancilla, R2, name = 'HDq')
     
     if as_circ:
         circ.reset(Ancilla)
@@ -62,6 +62,7 @@ def HDq(N, as_circ = False):
     
     if not as_circ:
         circ = circ.to_gate()
+        circ.name = 'HDq'
         
     return circ
 

@@ -48,5 +48,6 @@ def EQ(N, as_circ = False):
     
     if not as_circ:
         circ = circ.to_gate()
+        circ.name = 'EQ'
         
     return circ
