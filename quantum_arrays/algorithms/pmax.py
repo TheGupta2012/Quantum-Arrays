@@ -159,8 +159,6 @@ class PMax:
                 new_precision = self._get_bit_precision(self._threshold * self._updater)
                 self._high_dist._update_params(self._threshold, new_precision)
 
-        # to do - update
-
         if self.algo_type == "additive":
             result = [self._lower, self._upper]
         else:

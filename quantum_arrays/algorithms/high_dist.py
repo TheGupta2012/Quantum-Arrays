@@ -11,8 +11,11 @@ from ..subroutines.matrices import AMatrix
 # get the qae algorithm
 from .qae import QAE
 
+# get the qaa algorithm
+from .qaa import QAA
+
 # get imports from qiskit
-from qiskit import QuantumCircuit, assemble, execute, transpile
+from qiskit import ClassicalRegister, QuantumCircuit, assemble, execute, transpile
 from qiskit.tools.monitor import job_monitor
 from qiskit.circuit import QuantumRegister
 
@@ -291,9 +294,9 @@ class HighDist:
     def _make_QAE_operator(self):
         self._QAE = QAE(self._N, self._M, self._oracle, self.precision)
 
-    def _make_QAA_operator(self):
+    def _make_QAA_operator(self, circuit, iterations):
         """TO DO"""
-        self.QAA = None
+        return QAA(circuit, iterations, False)
 
     def _make_cond_MAJ(self):
         self._Cond_MAJ = CondMAJ(self._N, self._M, self._K, self._array)
@@ -407,6 +410,17 @@ class HighDist:
         self._circuit.barrier()
         self._circuit.compose(self._Cond_MAJ, qubits=c_maj_bits, inplace=True)
 
+        iterations = 2
+        self._QAA = self._make_QAA_operator(self._circuit, iterations)
+        self._circuit.compose(self._QAA, qubits=self._circuit.qubits, inplace=True)
+
+        self._circuit.barrier()
+
+        self._circuit.add_register(ClassicalRegister(1, name="cl_bit"))
+
+        # measure the last qubit in the circuit
+        self._circuit.measure(-1, 0)
+
     # qaa left
     # made circuit but bug in drawing ?
 
@@ -452,13 +466,13 @@ class HighDist:
 
 
 # Uncomment to test
-# h = HighDist(0.8, 0.4, 4)
-# h.encode([1, 2, 3, 4, 5, 2, 2, 2], 7)
-# # print(h._QAE.decompose().draw())
-# h._construct_circuit()
+h = HighDist(0.8, 0.4, 4)
+h.encode([1, 2, 3, 4, 5, 2, 2, 2], 7)
+# print(h._QAE.decompose().draw())
+h._construct_circuit()
 
-# circ = h.get_circuit()
-# circ.draw("text", filename="hdist.txt", scale=0.7)  # correct definition
+circ = h.get_circuit()
+circ.draw("text", filename="hdist.txt", scale=0.7)  # correct definition
 # # # circ.draw('latex', filename = 'hdist.tex', scale = 0.7)
 # # manhattan = FakeManhattan()
 
