@@ -10,7 +10,7 @@ class PMax:
         self.algo_type = algo_type
 
         precision = self._get_bit_precision(
-            self.accuracy
+            1 - self.accuracy
         )  # find the precision through the accuracy
         self._high_dist = HighDist(0.5, self.error, precision)
 
@@ -110,7 +110,14 @@ class PMax:
         # return how many bits would
         # allows us to encode this level
         # of accuracy
-        pass
+
+        precision = 1
+        power = 0.5
+        while power > val:
+            precision += 1
+            power /= 2
+
+        return precision
 
     # main methods
     def encode(self, array, M, N=None):
@@ -132,7 +139,14 @@ class PMax:
             return self._threshold <= (1 - self._updater)
 
     def run(self, backend, shots, optimization_level):
-        """_summary_"""
+        """Run the pmax algorithm on an array encoding
+
+        Args:
+            backend (IBMQ Backend): IBMQ backend for the execution of the
+                              algorithm
+            shots (int):  Number of shots to run for the algorithm
+            optimization_level (int): optimization level for the transpiler
+        """
         # this again uses the HDist object
 
         for i in range(1, self._K + 1):

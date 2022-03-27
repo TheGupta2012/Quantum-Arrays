@@ -1,4 +1,5 @@
 # type specs
+import random
 from typing import List, Optional
 from builtins import int
 
@@ -143,6 +144,7 @@ class HighDist:
         optimization_level=1,
         p_max_type=None,
         p_max_init=True,
+        **kwargs,
     ):
         """Run the HighDist circuit for the given array encoding and params for the algo
 
@@ -158,7 +160,6 @@ class HighDist:
                                         Pmax algorithm or not
             p_max_init (bool, optional): Boolean to know whether the pmax algo is being run for
                                         the first time
-
         """
 
         if not self._has_encoding:
@@ -171,7 +172,7 @@ class HighDist:
 
         # 2. Transpile the routines individually and then just
         #    construct the circuit with them
-        components = ["HDq", "CMP", "oracle", "QAE", "Cond_MAJ"]
+        components = ["_HDq", "_CMP", "_oracle", "_QAE", "_Cond_MAJ"]
 
         """For single transpilation only"""
 
@@ -182,7 +183,10 @@ class HighDist:
         transpilation should only be done once 
         """
 
-        if p_max_type == "additive" and not p_max_init:
+        # in additive type algo we only have a change in the threshold
+        # and not the precision
+
+        if kwargs["p_max_type"] == "additive" and not kwargs["p_max_init"]:
             components = ["Cond_MAJ"]
 
         for component in components:
@@ -197,14 +201,12 @@ class HighDist:
         self._construct_circuit()
 
         assembled_circ = assemble(self._circuit, backend=backend, shots=shots)
-
-        """"""
         job = execute(assembled_circ, backend=backend, shots=shots)
 
         job_monitor(job)
 
         # 4. Save the result of the executed circuit
-        print("\n***HIGH DIST EXECUTED SUCCESFULLY!***\n")
+        print("\n***HIGH DIST EXECUTED SUCCESSFULLY!***\n")
         self._result = {
             "job_result": job.result(),
             "counts": job.result().get_counts(),
@@ -295,7 +297,6 @@ class HighDist:
         self._QAE = QAE(self._N, self._M, self._oracle, self.precision)
 
     def _make_QAA_operator(self, circuit, iterations):
-        """TO DO"""
         return QAA(circuit, iterations, False)
 
     def _make_cond_MAJ(self):
@@ -362,9 +363,10 @@ class HighDist:
         for i in range(self._K):
             prec_reg, flip_reg = self._Prec_Regs[i][0], self._Prec_Regs[i][1]
 
+            hdq_prec_bits = prec_reg[:] + self._Ancilla[: self.precision + 1]
+
             # add qae
             qae_bits = prec_reg[:] + qae_range
-            hdq_prec_bits = prec_reg[:] + self._Ancilla[: self.precision + 1]
             self._circuit.compose(self._QAE, qubits=qae_bits, inplace=True)
             self._circuit.barrier()
 
@@ -428,25 +430,23 @@ class HighDist:
     def _update_params(self, threshold, precision=None):
         """Update the params of the HighDist
         algorithm to correctly run the Pmax
-        circuit. Only the threshold of the
-        algorithm changes which updates the
-        k value
+        circuit.
 
         Args:
              threshold : the new threshold of the algorithm
+             precision : the new precision of the algorithm
         """
 
         self.threshold = threshold
         if precision is not None:
             self.precision = precision
 
-        # now only the registers dependent on the
-        # threshold will be change
         self._setup_registers()
 
         # array is same, no encoding required
 
         # we also need to have a check over the ancilla
+        # as precision may have changed
         size_anc = max(
             [
                 math.ceil(math.log2(self._N)) + math.ceil(math.log2(self._M)) + 1,
@@ -466,18 +466,29 @@ class HighDist:
 
 
 # Uncomment to test
-h = HighDist(0.8, 0.4, 4)
-h.encode([1, 2, 3, 4, 5, 2, 2, 2], 7)
-# print(h._QAE.decompose().draw())
+h = HighDist(0.75, 0.33, 4)
+list_num = []
+
+for _ in range(2 ** 4):
+    list_num.append(random.randint(1, 2 ** 4))
+
+print(list_num)
+h.encode(arr=list_num, M=2 ** 4 + 1)
 h._construct_circuit()
 
 circ = h.get_circuit()
-circ.draw("text", filename="hdist.txt", scale=0.7)  # correct definition
-# # # circ.draw('latex', filename = 'hdist.tex', scale = 0.7)
-# # manhattan = FakeManhattan()
+circ.draw("text", filename="hdist.txt", scale=0.6)  # correct definition
+# circ.draw('latex', filename = 'hdist.tex', scale = 0.7)
+# manhattan = FakeManhattan()
 
 # from qiskit import transpile
+# from qiskit.providers.aer import AerSimulator
 
+# # try to do more here...
+# backend = AerSimulator(method="matrix_product_state")
+# h.run(backend, 1024)
+
+# print(h.get_results())
 # circ_decomp = circ.decompose()
 # print("Depth is :", circ_decomp.depth())
 

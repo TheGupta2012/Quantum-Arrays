@@ -1,10 +1,8 @@
 # first we need a circuit for the state preparation
 
 # essentially the whole circuit
-from qiskit.algorithms import Grover, AmplificationProblem
 from qiskit.circuit.library import GroverOperator
-from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister
-from qiskit import Aer
+from qiskit import QuantumCircuit
 
 
 def good_state(bin_string):
